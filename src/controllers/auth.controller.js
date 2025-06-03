@@ -97,6 +97,7 @@ exports.verifyPhoneOTP = async (req, res, next) => {
     }
 
     user.otp = undefined;
+    user.isPhoneVerified = true;
     await user.save();
 
     let token;
@@ -154,7 +155,7 @@ exports.registerUser = async (req, res, next) => {
         profilePhotoUrl = req.file.path;
       }
 
-      user.isPhoneVerified = true;
+      user.isRegistered = true;
       user.name = name;
       user.username = username;
       user.dateOfBirth = new Date(dateOfBirth);
@@ -235,5 +236,52 @@ exports.login = async (req, res, next) => {
     });
   } catch (error) {
     next(error);
+  }
+};
+
+exports.getMe = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select("-__v");
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    res.json({
+      success: true,
+      data: { user },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error fetching user profile",
+      error: error.message,
+    });
+  }
+};
+
+exports.getUserProfile = async (req, res) => {
+  try {
+    const user = await User.findOne({
+      $or: [{ username: req.params.username }, { name: req.params.username }],
+    }).select(
+      "name username profilePhoto preference videoLanguage location createdAt"
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: { user },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Error fetching user profile",
+      error: error.message,
+    });
   }
 };
