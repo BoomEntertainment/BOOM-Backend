@@ -11,6 +11,13 @@ const walletHistorySchema = new mongoose.Schema({
     enum: ["payin", "payout"],
     required: true,
   },
+  transactionType: {
+    type: String,
+    enum: ["recharge", "reward", "refund", "other", "withdrawal"],
+    required: function () {
+      return this.type === "payin";
+    },
+  },
   amount: {
     type: Number,
     required: true,
@@ -23,11 +30,15 @@ const walletHistorySchema = new mongoose.Schema({
     name: {
       type: String,
       enum: ["Video", "Subscription", "Comment", "Community"],
-      required: true,
+      required: function () {
+        return this.transactionType === "other";
+      },
     },
     id: {
       type: mongoose.Schema.Types.ObjectId,
-      required: true,
+      required: function () {
+        return this.transactionType === "other";
+      },
       refPath: "reason.name",
     },
   },
