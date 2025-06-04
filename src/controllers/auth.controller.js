@@ -1,8 +1,11 @@
 const User = require("../models/user.model");
+const Wallet = require("../models/wallet.model");
 const { AppError } = require("../middleware/error.middleware");
 const multer = require("multer");
 const path = require("path");
 const jwt = require("jsonwebtoken");
+const { getFollowCounts } = require("./follow.controller");
+const mongoose = require("mongoose");
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -125,129 +128,139 @@ exports.registerUser = async (req, res, next) => {
         return next(new AppError("Error uploading file", 400));
       }
 
-      const {
-        phone,
-        name,
-        username,
-        dateOfBirth,
-        gender,
-        preference,
-        videoLanguage,
-        location,
-      } = req.body;
+      const session = await mongoose.startSession();
+      session.startTransaction();
 
-      if (!phone || !name || !username || !dateOfBirth || !gender) {
-        throw new AppError("Missing required fields", 400);
-      }
+      try {
+        const {
+          phone,
+          name,
+          username,
+          dateOfBirth,
+          gender,
+          preference,
+          videoLanguage,
+          location,
+        } = req.body;
 
-      const existingUsername = await User.findOne({ username });
-      if (existingUsername) {
-        throw new AppError("Username already taken", 400);
-      }
+        if (!phone || !name || !username || !dateOfBirth || !gender) {
+          throw new AppError("Missing required fields", 400);
+        }
 
-      const user = await User.findOne({ phone });
-      if (!user || !user.isPhoneVerified) {
-        throw new AppError("Phone number not verified", 400);
-      }
+        const existingUsername = await User.findOne({ username });
+        if (existingUsername) {
+          throw new AppError("Username already taken", 400);
+        }
 
-      let profilePhotoUrl = "";
-      if (req.file) {
-        profilePhotoUrl = req.file.path;
-      }
+        const user = await User.findOne({ phone });
+        if (!user || !user.isPhoneVerified) {
+          throw new AppError("Phone number not verified", 400);
+        }
 
-      user.isRegistered = true;
-      user.name = name;
-      user.username = username;
-      user.dateOfBirth = new Date(dateOfBirth);
-      user.gender = gender;
-      user.preference = preference;
-      user.profilePhoto = profilePhotoUrl;
-      user.videoLanguage = videoLanguage;
-      user.location = location;
+        let profilePhotoUrl = "";
+        if (req.file) {
+          profilePhotoUrl = req.file.path;
+        }
 
-      await user.save();
+        user.isRegistered = true;
+        user.name = name;
+        user.username = username;
+        user.dateOfBirth = new Date(dateOfBirth);
+        user.gender = gender;
+        user.preference = preference;
+        user.profilePhoto = profilePhotoUrl;
+        user.videoLanguage = videoLanguage;
+        user.location = location;
 
-      const token = generateToken(user._id);
+        await user.save({ session });
 
-      res.status(200).json({
-        status: "success",
-        message: "User registered successfully",
-        token,
-        data: {
-          user: {
-            phone: user.phone,
-            name: user.name,
-            username: user.username,
-            dateOfBirth: user.dateOfBirth,
-            gender: user.gender,
-            preference: user.preference,
-            profilePhoto: user.profilePhoto,
-            videoLanguage: user.videoLanguage,
-            location: user.location,
+        // Create wallet for the user
+        const wallet = await Wallet.create(
+          [
+            {
+              userId: user._id,
+              balance: 0,
+            },
+          ],
+          { session }
+        );
+
+        await session.commitTransaction();
+
+        const token = generateToken(user._id);
+
+        res.status(200).json({
+          status: "success",
+          message: "User registered successfully",
+          token,
+          data: {
+            user: {
+              phone: user.phone,
+              name: user.name,
+              username: user.username,
+              dateOfBirth: user.dateOfBirth,
+              gender: user.gender,
+              preference: user.preference,
+              profilePhoto: user.profilePhoto,
+              videoLanguage: user.videoLanguage,
+              location: user.location,
+              followersCount: 0,
+              followingCount: 0,
+              walletBalance: 0,
+            },
           },
-        },
-      });
+        });
+      } catch (error) {
+        await session.abortTransaction();
+        throw error;
+      } finally {
+        session.endSession();
+      }
     });
   } catch (error) {
     next(error);
   }
 };
 
-exports.login = async (req, res, next) => {
-  try {
-    const { phone } = req.body;
+// Helper function to get user with wallet and follow info
+const getUserWithWalletAndFollowInfo = async (userId, currentUserId = null) => {
+  const user = await User.findById(userId).select("-__v");
+  if (!user) return null;
 
-    if (!phone) {
-      throw new AppError("Please provide your phone number", 400);
-    }
+  const [wallet, { followersCount, followingCount }] = await Promise.all([
+    Wallet.findOne({ userId }),
+    getFollowCounts(userId),
+  ]);
 
-    const user = await User.findOne({ phone });
-
-    if (!user) {
-      throw new AppError("No user found with this phone number", 404);
-    }
-
-    if (!user.isPhoneVerified) {
-      throw new AppError("Please verify your phone number first", 401);
-    }
-
-    if (!user.name || !user.username) {
-      throw new AppError("Please complete your registration first", 401);
-    }
-
-    const token = generateToken(user._id);
-
-    res.status(200).json({
-      status: "success",
-      token,
-      data: {
-        user: {
-          phone: user.phone,
-          name: user.name,
-          username: user.username,
-          dateOfBirth: user.dateOfBirth,
-          gender: user.gender,
-          preference: user.preference,
-          profilePhoto: user.profilePhoto,
-          videoLanguage: user.videoLanguage,
-          location: user.location,
-        },
-      },
+  let isFollowing = false;
+  if (currentUserId) {
+    const Follow = require("../models/follow.model");
+    isFollowing = await Follow.exists({
+      follower: currentUserId,
+      following: userId,
     });
-  } catch (error) {
-    next(error);
   }
+
+  return {
+    ...user.toObject(),
+    followersCount,
+    followingCount,
+    walletBalance: wallet ? wallet.balance : 0,
+    isFollowing,
+  };
 };
 
 exports.getMe = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select("-__v");
-    if (!user) {
+    const userData = await getUserWithWalletAndFollowInfo(req.user.id);
+
+    if (!userData) {
       return res.status(404).json({ message: "User not found" });
     }
+
     res.json({
       success: true,
-      data: { user },
+      data: { user: userData },
     });
   } catch (error) {
     res.status(500).json({
@@ -273,9 +286,14 @@ exports.getUserProfile = async (req, res) => {
       });
     }
 
+    const userData = await getUserWithWalletAndFollowInfo(
+      user._id,
+      req.user?.id
+    );
+
     res.json({
       success: true,
-      data: { user },
+      data: { user: userData },
     });
   } catch (error) {
     res.status(500).json({
@@ -283,5 +301,40 @@ exports.getUserProfile = async (req, res) => {
       message: "Error fetching user profile",
       error: error.message,
     });
+  }
+};
+
+exports.login = async (req, res, next) => {
+  try {
+    const { phone } = req.body;
+
+    if (!phone) {
+      throw new AppError("Please provide your phone number", 400);
+    }
+
+    const user = await User.findOne({ phone });
+
+    if (!user) {
+      throw new AppError("No user found with this phone number", 404);
+    }
+
+    if (!user.isPhoneVerified) {
+      throw new AppError("Please verify your phone number first", 401);
+    }
+
+    if (!user.name || !user.username) {
+      throw new AppError("Please complete your registration first", 401);
+    }
+
+    const userData = await getUserWithWalletAndFollowInfo(user._id);
+    const token = generateToken(user._id);
+
+    res.status(200).json({
+      status: "success",
+      token,
+      data: { user: userData },
+    });
+  } catch (error) {
+    next(error);
   }
 };
