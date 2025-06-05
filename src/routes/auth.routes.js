@@ -5,15 +5,19 @@ const {
   verifyPhoneOTP,
   registerUser,
   login,
+  getMe,
+  getUserProfile,
 } = require("../controllers/auth.controller");
 const { protect } = require("../middleware/auth.middleware");
 
 // Public routes
 router.post("/send-otp", sendPhoneOTP);
 router.post("/verify-otp", verifyPhoneOTP);
-router.post("/login", login);
+router.post("/register", registerUser);
+router.get("/profile/:username", getUserProfile);
 
 // Protected routes
-router.post("/register", registerUser);
+router.post("/login", protect, login);
+router.get("/me", protect, getMe);
 
 module.exports = router;

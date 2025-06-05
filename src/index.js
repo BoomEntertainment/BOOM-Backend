@@ -3,13 +3,14 @@ const mongoose = require("mongoose");
 const dotenv = require("dotenv");
 const cors = require("cors");
 const authRoutes = require("./routes/auth.routes");
+const walletRoutes = require("./routes/wallet.routes");
+const followRoutes = require("./routes/follow.routes");
 const { errorHandler } = require("./middleware/error.middleware");
 
 dotenv.config();
 
 const app = express();
 
-// CORS configuration
 app.use(
   cors({
     origin: process.env.FRONTEND_URL || "http://localhost:5173",
@@ -19,17 +20,16 @@ app.use(
   })
 );
 
-// Middleware
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Routes
 app.use("/api/auth", authRoutes);
+app.use("/api/wallet", walletRoutes);
+app.use("/api/users", followRoutes);
 
-// Error handling middleware
 app.use(errorHandler);
 
-// Database connection
 mongoose
   .connect(process.env.MONGODB_URI, {
     useNewUrlParser: true,
@@ -38,7 +38,7 @@ mongoose
   .then(() => console.log("Connected to MongoDB"))
   .catch((err) => console.error("MongoDB connection error:", err));
 
-// Start server
+
 const PORT = process.env.PORT;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);

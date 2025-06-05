@@ -10,26 +10,26 @@ const userSchema = new mongoose.Schema(
     name: {
       type: String,
       required: function () {
-        return this.isPhoneVerified;
+        return this.isRegistered;
       },
     },
     username: {
       type: String,
       required: function () {
-        return this.isPhoneVerified;
+        return this.isRegistered;
       },
       sparse: true,
     },
     dateOfBirth: {
       type: Date,
       required: function () {
-        return this.isPhoneVerified;
+        return this.isRegistered;
       },
     },
     gender: {
       type: String,
       required: function () {
-        return this.isPhoneVerified;
+        return this.isRegistered;
       },
       enum: ["male", "female", "other"],
     },
@@ -47,6 +47,10 @@ const userSchema = new mongoose.Schema(
       type: String,
     },
     isPhoneVerified: {
+      type: Boolean,
+      default: false,
+    },
+    isRegistered: {
       type: Boolean,
       default: false,
     },
