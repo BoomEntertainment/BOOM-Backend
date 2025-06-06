@@ -76,13 +76,38 @@ exports.createCommunity = async (req, res, next) => {
 
 exports.getAllCommunities = async (req, res, next) => {
   try {
-    const communities = await Community.find()
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 15;
+    const search = req.query.search || "";
+    const skip = (page - 1) * limit;
+
+    const searchQuery = search
+      ? {
+          $or: [
+            { name: { $regex: search, $options: "i" } },
+            { bio: { $regex: search, $options: "i" } },
+          ],
+        }
+      : {};
+
+    const totalCommunities = await Community.countDocuments(searchQuery);
+
+    const communities = await Community.find(searchQuery)
       .populate("founder", "username profilePicture")
-      .select("name bio profile_photo founder cost createdAt");
+      .select("name bio profile_photo founder cost createdAt")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
 
     res.status(200).json({
       success: true,
       data: communities,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalCommunities / limit),
+        totalCommunities,
+        hasMore: skip + communities.length < totalCommunities,
+      },
     });
   } catch (error) {
     next(error);
@@ -462,11 +487,13 @@ exports.getUserCommunities = async (req, res, next) => {
       })
       .sort({ joinedAt: -1 });
 
-    const [foundedCount, creatorCount, followingCount] = await Promise.all([
-      Community.countDocuments({ founder: userId }),
-      CommunityMember.countDocuments({ user: userId, role: "creator" }),
-      CommunityMember.countDocuments({ user: userId, role: "follower" }),
-    ]);
+    const [foundedCount, creatorCount, followingCount, totalCommunitiesCount] =
+      await Promise.all([
+        Community.countDocuments({ founder: userId }),
+        CommunityMember.countDocuments({ user: userId, role: "creator" }),
+        CommunityMember.countDocuments({ user: userId, role: "follower" }),
+        Community.countDocuments(),
+      ]);
 
     res.status(200).json({
       success: true,
@@ -475,6 +502,7 @@ exports.getUserCommunities = async (req, res, next) => {
           foundedCount,
           creatorCount,
           followingCount,
+          totalCommunitiesCount,
         },
         founded: foundedCommunities,
         creator: creatorCommunities.map((member) => ({
