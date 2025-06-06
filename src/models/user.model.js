@@ -54,12 +54,9 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
-    lastOtpSent: {
-      type: Date,
-    },
-    otp: {
-      code: String,
-      expiresAt: Date,
+    bio: {
+      type: String,
+      default: "",
     },
   },
   {
