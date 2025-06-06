@@ -6,6 +6,8 @@ const path = require("path");
 const jwt = require("jsonwebtoken");
 const { getFollowCounts } = require("./follow.controller");
 const mongoose = require("mongoose");
+const bcrypt = require("bcryptjs");
+const { uploadMiddleware } = require("../middleware/upload.middleware");
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -174,8 +176,7 @@ exports.registerUser = async (req, res, next) => {
 
         await user.save({ session });
 
-        // Create wallet for the user
-        const wallet = await Wallet.create(
+        await Wallet.create(
           [
             {
               userId: user._id,
@@ -222,7 +223,6 @@ exports.registerUser = async (req, res, next) => {
   }
 };
 
-// Helper function to get user with wallet and follow info
 const getUserWithWalletAndFollowInfo = async (userId, currentUserId = null) => {
   const user = await User.findById(userId).select("-__v");
   if (!user) return null;
@@ -338,3 +338,45 @@ exports.login = async (req, res, next) => {
     next(error);
   }
 };
+
+exports.updateProfile = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { name, bio } = req.body;
+    const updateData = {};
+
+    if (name) updateData.name = name;
+    if (bio) updateData.bio = bio;
+    if (req.file) {
+      updateData.profilePhoto = `/uploads/${req.file.filename}`;
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { $set: updateData },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Profile updated successfully",
+      data: updatedUser,
+    });
+  } catch (error) {
+    console.error("Update profile error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error updating profile",
+      error: error.message,
+    });
+  }
+};
+
+exports.uploadProfilePhoto = uploadMiddleware("profilePhoto");

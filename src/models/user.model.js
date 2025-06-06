@@ -61,6 +61,10 @@ const userSchema = new mongoose.Schema(
       code: String,
       expiresAt: Date,
     },
+    bio: {
+      type: String,
+      default: "",
+    },
   },
   {
     timestamps: true,

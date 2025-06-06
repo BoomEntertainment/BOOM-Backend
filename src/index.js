@@ -5,6 +5,7 @@ const cors = require("cors");
 const authRoutes = require("./routes/auth.routes");
 const walletRoutes = require("./routes/wallet.routes");
 const followRoutes = require("./routes/follow.routes");
+const communityRoutes = require("./routes/community.routes");
 const { errorHandler } = require("./middleware/error.middleware");
 
 dotenv.config();
@@ -26,6 +27,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/api/auth", authRoutes);
 app.use("/api/wallet", walletRoutes);
 app.use("/api/users", followRoutes);
+app.use("/api/community", communityRoutes);
 
 app.use(errorHandler);
 

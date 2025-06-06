@@ -3,49 +3,56 @@ const WalletHistory = require("../models/walletHistory.model");
 const mongoose = require("mongoose");
 
 exports.getWalletAndHistory = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
     const userId = req.user._id;
 
-    let wallet = await Wallet.findOne({ userId });
+    let wallet = await Wallet.findOne({ userId }).session(session);
     if (!wallet) {
-      wallet = await Wallet.create({ userId });
+      wallet = await Wallet.create([{ userId }], { session })[0];
     }
 
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
 
-    const history = await WalletHistory.find({ userId })
-      .populate({
-        path: "reason.id",
-        select: function () {
-          switch (this.reason?.name) {
-            case "Video":
-              return "title thumbnailUrl duration views";
-            case "Subscription":
-              return "name price duration";
-            case "Comment":
-              return "content";
-            case "Community":
-              return "name description";
-            default:
-              return "";
-          }
-        },
-      })
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+    const [history, total] = await Promise.all([
+      WalletHistory.find({ userId })
+        .populate({
+          path: "reason.id",
+          refPath: "reason.name",
+        })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+        .exec(),
+      WalletHistory.countDocuments({ userId }).exec(),
+    ]);
 
-    const total = await WalletHistory.countDocuments({ userId });
+    await session.commitTransaction();
 
     const transformedHistory = history.map((record) => {
-      const historyObj = record.toObject();
+      const historyObj = record;
 
       if (historyObj.reason && historyObj.reason.id) {
+        let filteredDetails;
+
+        switch (historyObj.reason.name) {
+          case "Community":
+            filteredDetails = {
+              name: historyObj.reason.id.name,
+            };
+            break;
+          default:
+            filteredDetails = historyObj.reason.id;
+        }
+
         historyObj.reasonDetails = {
           type: historyObj.reason.name,
-          details: historyObj.reason.id,
+          details: filteredDetails,
         };
 
         delete historyObj.reason.id;
@@ -68,11 +75,14 @@ exports.getWalletAndHistory = async (req, res) => {
       },
     });
   } catch (error) {
+    await session.abortTransaction();
     res.status(500).json({
       success: false,
       message: "Error fetching wallet details",
       error: error.message,
     });
+  } finally {
+    session.endSession();
   }
 };
 
@@ -284,6 +294,8 @@ exports.withdraw = async (req, res) => {
           remainingBalance: wallet.balance - amount,
           withdrawal: {
             id: history[0]._id,
+            type: "payout",
+            transactionType: "withdrawal",
             amount,
             status: "completed",
             bankDetails: {
